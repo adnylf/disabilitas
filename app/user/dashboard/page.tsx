@@ -1,43 +1,87 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BookOpen, Trophy, Clock, TrendingUp, Play, Award } from 'lucide-react';
 import Link from 'next/link';
+import UserLayout from '@/components/user/UserLayout';
+import { supabase } from '@/lib/supabase';
+import { Enrollment, Course } from '@/types/database';
 
-const enrolledCourses = [
-  {
-    id: 1,
-    title: 'Dasar-Dasar Pemrograman Web',
-    instructor: 'Dr. Ahmad Fauzi',
-    progress: 65,
-    totalLessons: 12,
-    completedLessons: 8,
-    thumbnail: 'https://images.pexels.com/photos/11035380/pexels-photo-11035380.jpeg?auto=compress&cs=tinysrgb&w=800',
-  },
-  {
-    id: 2,
-    title: 'Desain Grafis untuk Pemula',
-    instructor: 'Sarah Putri',
-    progress: 40,
-    totalLessons: 10,
-    completedLessons: 4,
-    thumbnail: 'https://images.pexels.com/photos/196644/pexels-photo-196644.jpeg?auto=compress&cs=tinysrgb&w=800',
-  },
-  {
-    id: 3,
-    title: 'Bahasa Inggris Percakapan',
-    instructor: 'John Smith',
-    progress: 80,
-    totalLessons: 15,
-    completedLessons: 12,
-    thumbnail: 'https://images.pexels.com/photos/256417/pexels-photo-256417.jpeg?auto=compress&cs=tinysrgb&w=800',
-  },
-];
+interface EnrollmentWithCourse extends Enrollment {
+  courses: Course;
+}
 
 export default function UserDashboard() {
+  const [enrollments, setEnrollments] = useState<EnrollmentWithCourse[]>([]);
+  const [stats, setStats] = useState({
+    activeCourses: 0,
+    certificates: 0,
+    totalHours: 0,
+    avgProgress: 0
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: enrollmentsData, error: enrollError } = await supabase
+        .from('enrollments')
+        .select(`
+          *,
+          courses (*)
+        `)
+        .eq('user_id', user.id)
+        .eq('enrollment_status', 'active')
+        .order('last_accessed', { ascending: false });
+
+      if (enrollError) throw enrollError;
+
+      const { data: certificatesData } = await supabase
+        .from('certificates')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_valid', true);
+
+      if (enrollmentsData) {
+        setEnrollments(enrollmentsData as EnrollmentWithCourse[]);
+
+        const totalProgress = enrollmentsData.reduce((sum, e) => sum + e.progress_percentage, 0);
+        const totalHours = enrollmentsData.reduce((sum, e) => sum + (e.total_watch_time_seconds / 3600), 0);
+
+        setStats({
+          activeCourses: enrollmentsData.length,
+          certificates: certificatesData?.length || 0,
+          totalHours: Math.round(totalHours),
+          avgProgress: enrollmentsData.length > 0 ? Math.round(totalProgress / enrollmentsData.length) : 0
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <UserLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </UserLayout>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <UserLayout>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8 animate-fadeIn">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
@@ -58,7 +102,7 @@ export default function UserDashboard() {
                 <TrendingUp className="h-5 w-5 text-success" />
               </div>
               <div className="space-y-1">
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">3</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.activeCourses}</p>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Kursus Aktif</p>
               </div>
             </CardContent>
@@ -73,7 +117,7 @@ export default function UserDashboard() {
                 <TrendingUp className="h-5 w-5 text-success" />
               </div>
               <div className="space-y-1">
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">2</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.certificates}</p>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Sertifikat</p>
               </div>
             </CardContent>
@@ -88,7 +132,7 @@ export default function UserDashboard() {
                 <TrendingUp className="h-5 w-5 text-success" />
               </div>
               <div className="space-y-1">
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">24</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalHours}</p>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Jam Belajar</p>
               </div>
             </CardContent>
@@ -103,7 +147,7 @@ export default function UserDashboard() {
                 <TrendingUp className="h-5 w-5 text-success" />
               </div>
               <div className="space-y-1">
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">62%</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.avgProgress}%</p>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Rata-rata Progress</p>
               </div>
             </CardContent>
@@ -120,53 +164,65 @@ export default function UserDashboard() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {enrolledCourses.map((course, index) => (
-                  <div
-                    key={course.id}
-                    className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border bg-white dark:bg-gray-800 hover:shadow-md transition-shadow"
-                    style={{ animationDelay: `${index * 100}ms` }}
-                  >
-                    <div className="w-full sm:w-32 h-32 sm:h-20 rounded-lg overflow-hidden flex-shrink-0">
-                      <img
-                        src={course.thumbnail}
-                        alt={course.title}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <h3 className="font-semibold text-gray-900 dark:text-white">
-                        {course.title}
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        {course.instructor}
-                      </p>
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-600 dark:text-gray-400">
-                            {course.completedLessons} dari {course.totalLessons} pelajaran
-                          </span>
-                          <span className="font-medium text-primary">
-                            {course.progress}%
-                          </span>
-                        </div>
-                        <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full transition-all"
-                            style={{ width: `${course.progress}%` }}
-                          ></div>
+                {enrollments.length === 0 ? (
+                  <div className="text-center py-12">
+                    <BookOpen className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-600 dark:text-gray-400 mb-4">
+                      Anda belum memiliki kursus aktif
+                    </p>
+                    <Link href="/courses">
+                      <Button>Jelajahi Kursus</Button>
+                    </Link>
+                  </div>
+                ) : (
+                  enrollments.map((enrollment, index) => (
+                    <div
+                      key={enrollment.id}
+                      className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border bg-white dark:bg-gray-800 hover:shadow-md transition-shadow"
+                      style={{ animationDelay: `${index * 100}ms` }}
+                    >
+                      <div className="w-full sm:w-32 h-32 sm:h-20 rounded-lg overflow-hidden flex-shrink-0">
+                        <img
+                          src={enrollment.courses.thumbnail || 'https://images.pexels.com/photos/4144923/pexels-photo-4144923.jpeg?auto=compress&cs=tinysrgb&w=800'}
+                          alt={enrollment.courses.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <h3 className="font-semibold text-gray-900 dark:text-white">
+                          {enrollment.courses.title}
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {enrollment.courses.total_materials || 0} materi
+                        </p>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600 dark:text-gray-400">
+                              Progress
+                            </span>
+                            <span className="font-medium text-primary">
+                              {Math.round(enrollment.progress_percentage)}%
+                            </span>
+                          </div>
+                          <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all"
+                              style={{ width: `${enrollment.progress_percentage}%` }}
+                            ></div>
+                          </div>
                         </div>
                       </div>
+                      <div className="flex sm:flex-col gap-2">
+                        <Link href={`/courses/${enrollment.course_id}`} className="flex-1">
+                          <Button className="w-full">
+                            <Play className="h-4 w-4 mr-2" />
+                            Lanjutkan
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
-                    <div className="flex sm:flex-col gap-2">
-                      <Link href={`/user/course/${course.id}`} className="flex-1">
-                        <Button className="w-full">
-                          <Play className="h-4 w-4 mr-2" />
-                          Lanjutkan
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
 
                 <Link href="/courses">
                   <Button variant="outline" className="w-full">
@@ -249,6 +305,6 @@ export default function UserDashboard() {
           </div>
         </div>
       </div>
-    </div>
+    </UserLayout>
   );
 }
